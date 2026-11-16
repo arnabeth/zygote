@@ -50,6 +50,8 @@ const hemi=new THREE.HemisphereLight('#ffffff','#bfc2c4',0.9);scene.add(hemi);
 scene.add(cam);
 const key=new THREE.DirectionalLight('#ffffff',1.0);key.position.set(0.4,0.7,1);cam.add(key);key.target.position.set(0,0,-1);cam.add(key.target);
 const fill=new THREE.DirectionalLight('#ffffff',0.35);fill.position.set(-1,-0.3,0.6);cam.add(fill);
+// rim: bright key light behind the sculpture, aimed back toward the viewer, outlines the edges
+const rim=new THREE.DirectionalLight('#ffffff',1.4);rim.position.set(0.9,1.1,-5);cam.add(rim);rim.target.position.set(0,0,-2.2);cam.add(rim.target);
 const laser=new THREE.Group();scene.add(laser);
 const lightL=new THREE.PointLight('#ff3b4e',2.2,0.55,2);laser.add(lightL);
 const dot=new THREE.Mesh(new THREE.SphereGeometry(0.006,12,12),new THREE.MeshBasicMaterial({color:'#ff2a2a'}));laser.add(dot);
@@ -58,12 +60,18 @@ const gr=gx.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(255,7
 const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(gc),transparent:true,depthWrite:false}));glow.scale.set(0.22,0.22,1);laser.add(glow);
 const chrome=new THREE.MeshStandardMaterial({color:'#d2d3d4',metalness:1,roughness:0.33,envMapIntensity:1.15});
 // wax: physical material plus a fast subsurface-scattering term, so light bleeds through thin parts
-const wax=new THREE.MeshPhysicalMaterial({color:'#dcccc1',roughness:0.45,metalness:0,sheen:0.35,sheenRoughness:0.7,sheenColor:new THREE.Color('#ffffff'),clearcoat:0.25,clearcoatRoughness:0.35,envMapIntensity:0.7});
-const sss={sssColor:{value:new THREE.Color('#ff8f7a')},sssDistortion:{value:0.25},sssPower:{value:2.2},sssScale:{value:1.6},sssAmbient:{value:0.03}};
-wax.onBeforeCompile=sh=>{Object.assign(sh.uniforms,sss);
+const wax=new THREE.MeshPhysicalMaterial({color:'#cdbcb0',roughness:0.45,metalness:0,sheen:0.35,sheenRoughness:0.7,sheenColor:new THREE.Color('#ffffff'),clearcoat:0.25,clearcoatRoughness:0.35,envMapIntensity:0.7});
+const sss={sssColor:{value:new THREE.Color('#ff8f7a')},sssDistortion:{value:0.25},sssPower:{value:3.0},sssScale:{value:0.9},sssAmbient:{value:0.03}};
+const waxSSS=sh=>{Object.assign(sh.uniforms,sss);
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform vec3 sssColor;uniform float sssDistortion,sssPower,sssScale,sssAmbient;')
  .replace('#include <lights_fragment_begin>',THREE.ShaderChunk.lights_fragment_begin.split('RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );').join('RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );{vec3 sh=normalize(directLight.direction+geometryNormal*sssDistortion);float sd=pow(saturate(dot(geometryViewDir,-sh)),sssPower)*sssScale;float wrap=saturate((dot(geometryNormal,directLight.direction)+0.6)/1.6);reflectedLight.directDiffuse+=(sd+sssAmbient+wrap*0.12)*sssColor*directLight.color*material.diffuseColor;}'));};
 const clay=new THREE.MeshStandardMaterial({color:'#b9b9bb',roughness:0.62,metalness:0,envMapIntensity:0.5});
+// rim edge: a bright highlight along the silhouette, strongest on the upper-right edges, as from a light behind
+const RIM={rimAmt:{value:1},rimCol:{value:new THREE.Color('#ffffff')}};
+function addRim(mat,strength,power,extra){mat.onBeforeCompile=sh=>{if(extra)extra(sh);Object.assign(sh.uniforms,RIM);
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float rimAmt;uniform vec3 rimCol;')
+ .replace('#include <lights_fragment_end>','#include <lights_fragment_end>\n{vec3 vd=normalize(vViewPosition);float fr=pow(1.0-saturate(dot(normal,vd)),'+power.toFixed(1)+');float side=0.35+0.65*saturate(dot(normal,normalize(vec3(0.55,0.75,0.0))));reflectedLight.directSpecular+=rimCol*rimAmt*'+strength.toFixed(2)+'*fr*side;}');};}
+addRim(chrome,1.6,3.0);addRim(wax,0.9,3.5,waxSSS);addRim(clay,0.9,3.0);
 const MATS={chrome,wax,clay};let mesh=null;
 load.textContent='loading';
 fetch('zygote_1.glb').then(r=>r.arrayBuffer()).then(bin=>{
@@ -76,7 +84,7 @@ let redOnly=false;const GREY=new THREE.Color(BG),DARK=new THREE.Color('#0d0d0f')
 const press=(sel,b)=>document.querySelectorAll(sel).forEach(x=>x.setAttribute('aria-pressed',x===b));
 document.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>{press('[data-m]',b);if(mesh)mesh.material=MATS[b.dataset.m];}));
 function setLight(red){redOnly=red;document.body.classList.toggle('red',red);
- scene.environment=red?null:ENV;hemi.intensity=red?0:0.9;key.intensity=red?0:1.0;fill.intensity=red?0:0.35;
+ scene.environment=red?null:ENV;hemi.intensity=red?0:0.9;key.intensity=red?0:1.0;fill.intensity=red?0:0.35;rim.intensity=red?0:1.4;RIM.rimAmt.value=red?0:1;
  scene.background=red?DARK:GREY;scene.fog.color.copy(red?DARK:GREY);}
 document.querySelectorAll('[data-l]').forEach(b=>b.addEventListener('click',()=>{press('[data-l]',b);setLight(b.dataset.l==='red');}));
 if(new URLSearchParams(location.search).get('l')==='red')document.querySelector('[data-l="red"]').click();
